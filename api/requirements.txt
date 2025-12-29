@@ -1,0 +1,14 @@
+fastapi
+uvicorn
+python-multipart
+python-stdnum
+pydantic>=2.0.0
+surya-ocr
+google-generativeai
+opencv-python-headless
+celery
+redis
+pydantic-settings
+python-dotenv
+httpx
+supabase

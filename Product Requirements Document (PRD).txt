@@ -1,0 +1,96 @@
+﻿Product Requirements Document (PRD)
+Project Name: Cognitive Logistics Operating System (CLOS)
+Version: 1.0 (MVP) Status: Draft Target Launch: T+30 Days
+________________
+
+
+1. Executive Summary
+CLOS is a vertical AI tool designed to automate the ingestion, validation, and entry of shipping documentation (specifically Bills of Lading) into Freight Management Systems (TMS) like CargoWise and Magaya.
+Unlike generic OCR tools, CLOS acts as a "Logistic Data Firewall." It does not just read text; it validates business logic (container checksums, port codes) and formats data into the strict XML standards required by legacy ERPs, saving freight forwarders ~20 hours per week in manual data entry.
+2. Target Audience
+* Primary User: Operations Coordinators / Data Entry Clerks at small-to-mid-sized Freight Forwarding firms (10-50 employees).
+* Buyer Persona: Operations Manager or Owner who is tired of paying for manual entry errors (demurrage charges, lost containers).
+* Pain Point: Manually typing data from PDF Bills of Lading into CargoWise is slow (20 mins/doc), error-prone, and boring.
+3. Goals & Success Metrics
+* Primary Goal: Reduce "Time-to-Ticket" (time from receiving a PDF to having a valid entry in TMS) from 20 minutes to <2 minutes.
+* Accuracy Goal: >99% field accuracy after Human-in-the-Loop (HITL) review.
+* MVP Metric: Ability to process a mixed-layout Bill of Lading (PDF) and generate a valid UniversalShipment.xml file accepted by CargoWise.
+________________
+
+
+4. Functional Requirements
+4.1. Core Workflow
+1. Ingestion: User drags and drops a PDF (scanned or native) into the web dashboard.
+2. Processing: System OCRs the document, extracts key-value pairs, and identifies line items (containers).
+3. Validation: System runs logic checks (ISO 6346, SCAC codes) and flags low-confidence fields.
+4. Review (HITL): User verifies data side-by-side with the original PDF.
+5. Export: System pushes data to Fleetbase (internal record) and generates an XML file for CargoWise.
+4.2. Feature Specifications
+F1: Intelligent Ingestion Engine
+* Requirement: Accept PDF, JPG, PNG. Max size 20MB.
+* Tech: Next.js (Frontend), FastAPI (Backend).
+* Logic:
+   * If PDF is >1 page, auto-split (future V2 feature, for now assume 1 shipment per file).
+   * Run image preprocessing (deskew/denoise) using OpenCV before OCR.
+F2: The "Vision" Layer (OCR + LLM)
+* Requirement: Extract text with spatial coordinates to support UI highlighting.
+* Tech: Surya (OCR) + Gemini 1.5 Flash (Extraction).
+* Data Fields to Extract:
+   * Header: Shipper, Consignee, Notify Party, Vesssel Name, Voyage No, Port of Loading (POL), Port of Discharge (POD), HBL Number, MBL Number.
+   * Line Items (Table): Container Number, Seal Number, No. of Packages, Weight (Gross/Net), Volume (CBM), Description of Goods.
+F3: Logistics Logic & Validation
+* Requirement: The system must know "Logistics Rules," not just text.
+* Validation Rules:
+   * Container ID: Must pass ISO 6346 checksum algorithm (e.g., MSKU1234567 is valid, MSKU1234568 is invalid). Action: Highlight Red if invalid.
+   * SCAC Code: Match Carrier Name to SCAC (e.g., "Maersk" -> "MAEU").
+   * LOCODE: Fuzzy match "Shanghai" -> CNSHA.
+F4: The "Split-Screen" Review Interface
+* Requirement: User sees PDF on left, Form on right. Clicking a field zooms the PDF to that location.
+* Tech: react-pdf-highlighter-extended.
+* UX:
+   * Green Field: High confidence + Valid Logic.
+   * Yellow Field: Low confidence (<80%).
+   * Red Field: Logic Error (Invalid Container Checksum).
+   * Constraint: User cannot export until all Red fields are resolved.
+F5: The "Universal Writer" (Integration)
+* Requirement: Map validated data to CargoWise UniversalShipment XML schema.
+* Output: Downloadable .xml file or direct HTTP POST to eAdaptor endpoint.
+* Schema Mapping:
+   * Shipper -> OrganizationAddressCollection.OrganizationAddress (Type: Consignor)
+   * Container -> ContainerCollection.Container
+________________
+
+
+5. Technical Architecture (The Stack)
+Component
+	Technology
+	Rationale
+	Cost (Est.)
+	Frontend
+	Next.js 14 (App Router)
+	React standard, fast, easy Vercel deploy.
+	Free (Vercel Hobby)
+	Backend API
+	FastAPI (Python)
+	Required for PyTorch (Surya) and Pandas.
+	~$5-10/mo (Render)
+	OCR Engine
+	Surya (Open Source)
+	High accuracy, free (self-hosted), line-level bbox.
+	$0 (Self-hosted)
+	LLM Reasoning
+	Gemini 1.5 Flash
+	Cheapest multimodal model for extraction.
+	~$5.00/mo
+	Database
+	Supabase (Postgres)
+	Stores user data, parsed logs, and Fleetbase core.
+	Free Tier
+	ERP Core
+	Fleetbase
+	Provides the data schema for "Orders" & "Entities".
+	Free (Open Source)
+	PDF UI
+	React-PDF-Highlighter
+	Critical for the "Review" UX.
+	Free

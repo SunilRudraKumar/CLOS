@@ -1,0 +1,247 @@
+﻿Architecting the Cognitive Logistics Operating System: A Comprehensive Analysis of Open-Source Repositories and Integration Strategies
+1. Executive Introduction: The Paradigm Shift to Composable Logistics
+The global supply chain and logistics industry stands at a critical technological juncture, transitioning from rigid, monolithic legacy systems toward agile, composable architectures. Historically, logistics providers were forced to choose between building bespoke Enterprise Resource Planning (ERP) systems from first principles—a prohibitively expensive and risky endeavor—or licensing proprietary, "black-box" SaaS platforms that result in data silos and vendor lock-in. The user's directive to construct a logistics platform by leveraging "already built projects from GitHub" rather than building from scratch aligns with the modern architectural philosophy of Composable Enterprises. This strategy posits that the most robust systems are not coded line-by-line but are orchestrated from mature, specialized, and open-source components.
+This comprehensive research report provides a blueprint for a Cognitive Logistics Operating System (CLOS). "Cognitive" implies a system that does not merely record transactions but actively perceives and interprets unstructured data—specifically, the complex documentation that fuels global trade, such as Bills of Lading (BoL), Commercial Invoices, and Customs Declarations. By integrating a specialized operational core with advanced Document Intelligence (OCR/IDP), Human-in-the-Loop (HITL) verification interfaces, and standardized Data Interchange (EDI) parsers, an organization can achieve a technological maturity comparable to industry giants like Flexport or Uber Freight, but with a fraction of the capital expenditure and complete retention of data sovereignty.
+The analysis that follows is exhaustive. It dissects the technical merits, architectural fit, and integration logic of specific GitHub repositories identified in the research phase. It moves beyond superficial feature listing to explore the second-order implications of adopting these technologies—addressing how the choice of an Optical Character Recognition (OCR) engine influences database schema design, or how the selection of a frontend PDF library impacts the latency of human verification workflows. The report is structured to guide a technical architect through the selection and synthesis of these disparate tools into a cohesive, production-grade platform.
+________________
+2. The Operational Backbone: Logistics Resource Planning
+The foundation of any logistics platform is the database schema and business logic that governs the physical movement of goods. This is the "system of record" where entities such as Drivers, Vehicles, Shipments, Routes, and Warehouses coexist. Building this layer from scratch is fraught with peril due to the inherent complexity of modeling supply chain relationships—handling multi-leg shipments, recursive geographical zones, and dynamic asset allocation requires a maturity of data modeling that takes years to refine.
+2.1. Primary Recommendation: Fleetbase
+Repository: fleetbase/fleetbase 1
+Command Line Interface: fleetbase/fleetbase-cli 3
+Storefront API: fleetbase/storefront-api 4
+The research identifies Fleetbase as the premier open-source candidate for the operational core. Unlike generic ERPs that must be contorted to fit logistics use cases, Fleetbase is engineered specifically as a "Supply Chain Operating System." Its architecture is not merely a collection of scripts but a robust application framework built on Laravel (PHP) for the backend API and Ember.js for the administrative console.1
+2.1.1. Architectural Analysis: The Headless Advantage
+A critical insight from the repository analysis is Fleetbase’s "headless" design philosophy. In traditional monolithic ERPs (like Odoo), the backend logic and frontend presentation are tightly coupled. Fleetbase decouples these layers. The core logic—managing fleet movements, order ingestion, and driver assignments—is exposed via a comprehensive RESTful API.2 This separation is vital for the proposed Cognitive Logistics System because it allows the intelligent document processing (IDP) microservices to interact with the system programmatically. When an invoice is parsed by an AI model, the system does not need to simulate a user click; it simply authenticates via API token and POSTs the structured data to the /v1/orders endpoint.6
+The backend utilizes MySQL for relational data persistence—essential for the transactional integrity required in financial and inventory records—and Redis for caching and queue management.5 The use of Redis is particularly noteworthy as it hints at the system's readiness for high-concurrency environments and real-time features, such as vehicle tracking updates via WebSockets.7 This event-driven architecture allows the frontend interfaces to update instantaneously when a shipment status changes, mirroring the responsiveness of consumer-grade applications like Uber or DoorDash.
+2.1.2. Entity Modeling and Domain Specificity
+One of the primary reasons to adopt Fleetbase rather than building from scratch is the maturity of its data models. The repository includes predefined schemas for complex logistics entities that are difficult to model correctly on the first attempt:
+* Service Rates and Zones: Fleetbase includes logic for defining geographical zones (Geofences) and attaching specific service rates to them.1 This allows for dynamic pricing models based on delivery locations—a requirement that would otherwise necessitate complex geospatial database queries and polygon-in-point algorithms.
+* Payloads vs. Products: The system distinguishes between the abstract concept of a "Product" (what is being sold) and a "Payload" (what is being transported). This nuance is critical in logistics, where a single shipment might consist of multiple pallets (Payloads) containing mixed SKUs (Products). Fleetbase’s internal logic handles these relationships out of the box.8
+* Telematics Integration: The architecture supports integration with hardware sensors and telematics devices.1 This suggests that the database is optimized to handle time-series data streams from vehicles, allowing for future expansion into predictive maintenance or driver behavior monitoring without a schema migration.
+2.1.3. The Extension Ecosystem
+Fleetbase utilizes a modular architecture known as "Extensions." An extension in Fleetbase is a self-contained package that includes both the backend Laravel logic and the frontend Ember engine.9 This design pattern is crucial for maintaining a clean codebase. Rather than hacking the core repository to add Document Management capabilities, the recommended approach is to build a fleetbase-document-manager extension. This ensures that the core Fleetbase system can be updated via git pull without overwriting custom business logic. The fleetbase-cli tool facilitates this by scaffolding the directory structure for new extensions, streamlining the development process.3
+2.2. Comparative Analysis of Alternatives
+To validate the selection of Fleetbase, it is necessary to compare it against other open-source ERP solutions identified in the research.
+Ever Gauzy (ever-co/ever-gauzy) 10:
+Ever Gauzy is a comprehensive Business Management Platform built with a modern stack: TypeScript, NestJS, and Angular/React.
+* Pros: The technology stack is more unified (full-stack JavaScript/TypeScript) compared to Fleetbase’s PHP/Ember mix. It covers a broader range of business functions, including Human Resources (HR), Customer Relationship Management (CRM), and Project Management.11
+* Cons: Its generalization is its weakness for this specific project. Gauzy is designed to run any business, from a design agency to a law firm. It lacks the deep, specialized logistics abstractions—such as "Bill of Lading," "Consignment," or "Route Optimization"—that Fleetbase provides natively. Adapting Gauzy for a heavy logistics workflow would require treating it as a framework and building the logistics domain logic from scratch, negating the "don't build from scratch" requirement.
+Frappe / ERPNext (frappe/erpnext) 12:
+ERPNext is a giant in the open-source ERP space, built on the Python-based Frappe framework.
+* Pros: Massive community, thousands of modules, and Python backend (which aligns with the AI components).
+* Cons: Frappe is an extremely "opinionated" framework. It imposes strict architectural patterns that can be difficult to decouple. Integrating a modern, custom React-based HITL interface with ERPNext’s monolithic architecture often leads to "fighting the framework." Furthermore, its logistics modules are often designed for manufacturing supply chains (procurement -> manufacturing -> sales) rather than pure freight forwarding or 3PL (Third-Party Logistics) operations.
+Conclusion on Core Selection:
+Fleetbase offers the highest "domain fit." Its specialized focus on freight, fleet, and delivery management means that 80-90% of the required data structures are present on day one. The "headless" nature of its API makes it the most compatible with the external AI and UI microservices proposed in the subsequent sections.
+________________
+3. The Vision Layer: Intelligent Document Processing (IDP)
+A modern "Cognitive" logistics system must do more than store data; it must ingest it. The logistics industry swims in a sea of unstructured PDFs: Invoices, Packing Lists, Bills of Lading, and Customs Declarations. Manually entering this data is the bottleneck of global trade. The solution lies in integrating an Intelligent Document Processing (IDP) engine. The research highlights a shift from simple Optical Character Recognition (OCR) to "Visual Document Understanding" (VDU).
+3.1. The Evolution of OCR: From LSTMs to Transformers
+Historically, open-source OCR was synonymous with Tesseract. While Tesseract (maintained by Google) is robust, its architecture relies on Long Short-Term Memory (LSTM) networks that process text line-by-line. This approach struggles with the chaotic layouts of logistics documents, where text might be in multi-column tables, rotated, or embedded in noisy scanned backgrounds.
+The research points to a new generation of OCR engines based on Transformers—the same architecture powering Large Language Models (LLMs). These models process the document as a holistic image, attending to the relationship between text and visual features simultaneously.
+3.2. Primary Recommendation: Surya
+Repository: datalab-to/surya 13
+Repository: VikParuchuri/tabled 15
+Surya represents the cutting edge of open-source document intelligence. It is engineered specifically for high-accuracy document OCR, superseding general-purpose scene text detectors.
+3.2.1. Technical Architecture: SegFormer and Efficiency
+Surya utilizes a SegFormer architecture for text detection.16 SegFormer is a transformer-based model designed for semantic segmentation. In the context of OCR, it effectively "segments" the text regions from the background. This is a crucial differentiator from Tesseract.
+* Line-Level Detection: Surya excels at detecting text at the line level, even when lines are closely spaced or have varying font sizes—common in the fine print of a Bill of Lading.13
+* Polygon Bounding Boxes: Unlike older engines that return simple rectangular bounding boxes (bbox), Surya can return polygons. This is vital for handling skewed scans (e.g., a driver takes a photo of a document at an angle). A rectangle would include too much background noise; a polygon wraps tightly around the text, improving downstream recognition accuracy.17
+* Language Support: Surya supports over 90 languages.13 Global logistics is inherently multilingual; a single shipment might involve documents in Chinese, English, and German. A unified model that handles these without manual language switching is a significant architectural advantage.
+3.2.2. Deployment Considerations
+Surya is designed for production. The repository includes code for efficient batch processing and GPU acceleration.
+* Resource Utilization: Transformer models are computationally intensive. The deployment architecture must account for GPU availability. Running Surya on a CPU is possible but may result in latencies of several seconds per page, which degrades the user experience in a real-time upload workflow. The recommended approach is to deploy Surya as a microservice in a containerized environment (Docker) with NVIDIA CUDA support (cudanexus/ocr-surya).18
+* API Wrapper: To integrate Surya with the rest of the stack (Fleetbase and the Frontend), it should be wrapped in a lightweight API (using FastAPI, discussed in Section 6). This isolates the heavy Python/PyTorch dependencies from the PHP/Node.js parts of the system.
+3.3. Structural Extraction: Microsoft Table Transformer (TATR)
+Repository: microsoft/table-transformer 19
+Repository: poloclub/unitable 21
+Logistics documents are table-heavy. An invoice is essentially a table of line items. Standard OCR engines return a "soup" of words with coordinates, but they do not understand the concept of "Row 1, Column 3."
+Microsoft Table Transformer (TATR) solves this by treating table structure recognition as an object detection problem. It is built on the DETR (DEtection TRansformer) framework.
+* The Workflow: The system first passes the document image to TATR. TATR predicts bounding boxes for "Table," "Row," "Column," and "Header" classes.
+* Intersection over Union (IoU): By overlaying the cell bounding boxes predicted by TATR with the text bounding boxes detected by Surya, the system can assign specific text strings to specific cells. This allows the reconstruction of the tabular data into a structured format (e.g., a list of JSON objects representing line items).19
+* UniTable: The research also uncovers UniTable 21, a more recent unified framework. However, for a production system, TATR is currently more mature and has better pretrained model availability (e.g., on the PubTables-1M dataset).19
+3.4. Semantic Understanding: LayoutLM vs. LLMs
+Extracting text and tables is the "Perception" phase. The "Cognition" phase involves understanding what that text means. Is "1000" the Gross Weight, the Net Weight, or the Price?
+Repository: microsoft/unilm (LayoutLMv3)
+Legacy Repositories (Warnings): InvoiceNet 22 and Invoiceable.23
+The research snippets highlight repositories like InvoiceNet and Invoiceable. A critical analysis reveals these are largely abandonware.23 They rely on older template-matching techniques or outdated deep learning frameworks that are brittle to layout changes. Relying on them constitutes a high technical risk.
+The Modern Approach (2025 Standard):
+The recommended architecture leverages Large Language Models (LLMs) or LayoutLM for semantic extraction.
+* LayoutLM: This model is multimodal; it takes the text and its position (bounding box) and the visual image features as input. It achieves state-of-the-art performance on form understanding because it learns that a number in the top-right corner is likely a date, regardless of the specific text label.24
+* Generative Extraction (LLMs): A powerful alternative is to use tools like Docling 25 to convert the PDF to a Markdown representation, preserving layout, and then feed this to a localized LLM (e.g., Llama 3 or Mistral). The prompt would be: "Extract the Consignee, Shipper, and Total Weight from the following document content...". This approach is incredibly flexible and requires zero training data, unlike LayoutLM which requires fine-tuning.
+________________
+4. The Verification Interface: Frontend Engineering
+Even the most advanced AI models will hallucinate. In logistics, reading a quantity of "10" as "100" can cause massive inventory discrepancies. Therefore, a Human-in-the-Loop (HITL) interface is not optional—it is a core requirement. This interface must allow a human operator to view the original PDF and the extracted data side-by-side, visually verify the links between them, and correct errors.
+4.1. Primary Recommendation: React-PDF-Highlighter
+Repository: agentcooper/react-pdf-highlighter 26
+Fork Recommendation: DanielArnould/react-pdf-highlighter-extended 27
+The research identifies react-pdf-highlighter as the industry-standard library for this specific use case. However, the original repository by agentcooper has seen reduced activity. The fork react-pdf-highlighter-extended is the superior choice for a new project.
+4.1.1. Technical Analysis: Viewport Independence
+A naive implementation of a PDF annotation tool might try to overlay an HTML div on top of an image. This fails because PDF rendering is responsive; as the user zooms or resizes the window, the image size changes, but the absolute pixel coordinates of the overlay do not.
+* Coordinate System: react-pdf-highlighter solves this by using a normalized coordinate system. It stores highlights not as pixels, but as percentages of the page width/height.28 This ensures that a highlight drawn on a 1080p monitor appears in the correct location on a 4K monitor.
+* PDF.js Integration: The library is built on top of Mozilla's pdf.js.29 This ensures accurate rendering of the PDF specification, including fonts and vector graphics, which is superior to converting the PDF to a static JPEG image (which loses fidelity and prevents text selection).
+4.1.2. The "Coordinate Transform" Challenge
+Integrating Surya (Backend) with React-PDF-Highlighter (Frontend) presents a specific mathematical challenge identified in the research.30
+* The Mismatch: Surya outputs bounding boxes in Image Coordinates (pixels relative to the source image resolution, e.g., 2500x3300). React-PDF-Highlighter expects Normalized PDF Coordinates (0 to 100% of the viewport).
+* The Solution: The integration layer (Next.js/FastAPI) must implement a transformation function. It requires the dimensions of the PDF page (extracted via pdfplumber or pypdf) to scale the Surya coordinates:
+
+$$X_{normalized} = (X_{surya} / Width_{image}) \times 100$$
+$$Y_{normalized} = (Y_{surya} / Height_{image}) \times 100$$
+
+Without this precise transformation logic, the bounding boxes will drift or appear in the wrong locations, rendering the verification UI useless.
+4.2. Alternative: Label Studio
+Repository: HumanSignal/label-studio 31
+Frontend Library: HumanSignal/label-studio-frontend 32
+If the engineering team lacks the capacity to build a bespoke UI using React components, Label Studio offers a "Buy" (or rather, "Download") option.
+   * Pros: It is a complete application with user management, task queues, and pre-built interfaces for image and document annotation. It supports "Active Learning," where corrections made by humans are automatically fed back to retrain the model.
+   * Cons: It is a heavy dependency. Integrating Label Studio into the Fleetbase workflow is more complex than a lightweight React component. It requires running a separate server instance and syncing data between Fleetbase and Label Studio. It is best used if the project has a heavy requirement for training new models, rather than just verifying data.
+4.3. Commercial/Open Core Alternatives
+Repository: react-pdf-viewer.dev 33
+The research mentions react-pdf-viewer. While powerful, it operates on an "Open Core" model where advanced features (like proprietary annotation layers) may require a license. For a strictly open-source project, react-pdf-highlighter-extended is the safer legal choice to ensure zero licensing fees.
+________________
+5. The Lingua Franca: EDI and Data Standardization
+In logistics, data must not only be extracted; it must be standardized. A system that parses an invoice but cannot validate the Container Number or convert a City Name to a UN/LOCODE is functionally incomplete for global trade.
+5.1. EDI Parsing: Library vs. Application
+Electronic Data Interchange (EDI) is the backbone of legacy logistics.
+Repository: nerdocs/pydifact (Python) 34
+Repository: aaronhuggins/node-x12 (Node.js) 36
+Repository: bots-edi/bots 37
+The research reveals a dichotomy in open-source EDI tools: Libraries vs. Translators.
+   * Bots (The Translator): This is a full-featured EDI application. It handles communication channels (VANs, AS2), mapping, and translation. It is powerful but archaic (Python 2 legacy, transitioning slowly). Deploying Bots adds significant operational overhead.
+   * Pydifact / Node-X12 (The Libraries): For a modern "Cognitive" platform, the Library approach is recommended. Since the architecture already includes Python (FastAPI) and Node.js (Next.js) services, incorporating lightweight parsers is more efficient.
+   * Pydifact: Allows for pythonic iteration over UN/EDIFACT segments. It simplifies the parsing logic into readable loops, enabling the developer to extract specific segments (e.g., BGM for Beginning of Message, DTM for Dates) and map them directly to the Fleetbase API schema.39
+   * Node-X12: Utilizes Node.js streams. This is critical for performance if the system needs to process massive EDI batch files (hundreds of megabytes) without exhausting server memory.40
+5.2. Validation and Standardization
+Repository: arthurdejong/python-stdnum 41
+Repository: datasets/un-locode 43
+Validation is the safety net of the OCR process.
+   * ISO 6346 Validation: Shipping container numbers (e.g., MSKU1234567) contain a mathematical check digit. The python-stdnum library implements this algorithm. The integration logic should trigger this validation immediately after OCR. If the check fails, it indicates either a fraudulent container or, more likely, an OCR error (e.g., reading "B" as "8"). The system can then flag this field for mandatory human review.41
+   * UN/LOCODE Integration: Locations in Fleetbase should be normalized to UN/LOCODEs (e.g., USNYC for New York). The datasets/un-locode repository provides the raw data (JSON/CSV). A simple lookup microservice should be built to fuzzy-match OCR-extracted city names against this dataset, ensuring that the data stored in Fleetbase is compliant with international trade standards.44
+________________
+6. Integration Architecture: Synthesizing the Stack
+The true value of this project lies not in the individual repositories but in their orchestration. The following architectural blueprint details how to weave Fleetbase, Surya, and React-PDF-Highlighter into a coherent system.
+6.1. The "Glue" Stack: Next.js + FastAPI
+Repository: tsangel/nextjs-fastapi-starter 45
+Repository: Abdulbasit110/nextjs-fastapi 46
+The research recommends a Hybrid Microservices Architecture:
+   1. The Frontend (Next.js): Hosts the User Interface, including the Fleetbase extensions and the React-PDF-Highlighter review screens. Next.js is chosen for its ability to handle server-side rendering and its rich ecosystem of React components.
+   2. The AI Backend (FastAPI): Hosts the Python-heavy workloads: Surya, PyDifact, and Stdnum. FastAPI is chosen for its asynchronous performance (essential for non-blocking OCR jobs) and its native support for Python type hinting, which improves code reliability.45
+6.2. The Data Flow Pipeline
+The recommended workflow follows a "Human-in-the-Loop" pattern:
+Stage
+	Action
+	Component / Repository
+	Data State
+	1. Ingestion
+	User uploads BoL/Invoice via UI.
+	Next.js Frontend
+	Raw PDF / Image
+	2. Queuing
+	File sent to processing queue.
+	Redis (Fleetbase Infrastructure)
+	Job ID Created
+	3. Processing
+	Worker picks up job, runs OCR.
+	FastAPI + Surya + TATR
+	Raw Text + Bounding Boxes
+	4. Parsing
+	LLM/LayoutLM extracts fields.
+	Docling / Local LLM
+	Structured JSON (Candidate)
+	5. Validation
+	Checksums & Codes verified.
+	python-stdnum + UN/LOCODE
+	JSON + Validation Flags
+	6. Review
+	User corrects data on UI.
+	React-PDF-Highlighter-Extended
+	Verified JSON
+	7. Commit
+	Validated data pushed to ERP.
+	Fleetbase API
+	Order / Shipment Record
+	6.3. Infrastructure and Deployment
+The deployment should leverage Docker Compose to manage the multi-container environment.
+   * Container 1: Fleetbase Core (PHP/Laravel).
+   * Container 2: Fleetbase Console (Ember.js).
+   * Container 3: Database (MySQL).
+   * Container 4: Cache/Queue (Redis).
+   * Container 5: AI Microservice (FastAPI + Surya). Note: This container requires NVIDIA Runtime passed through from the host for GPU acceleration.
+   * Container 6: Frontend App (Next.js).
+This containerization ensures consistency across development and production environments, addressing the "it works on my machine" friction often encountered with complex multi-language stacks.
+________________
+7. Conclusion and Strategic Outlook
+The analysis confirms that building a Cognitive Logistics Operating System is not only feasible but strategically advantageous using the identified open-source repositories. The ecosystem provides every necessary component: Fleetbase delivers the domain-specific data schema; Surya and Table Transformer provide state-of-the-art perception; React-PDF-Highlighter enables the necessary human verification; and Pydifact/Stdnum ensure compliance.
+By composing these tools, the development team can bypass estimated 18-24 months of foundational coding. The primary engineering challenge shifts from "How do I build an ERP?" to "How do I orchestrate these API interactions?"—a significantly lower-risk and higher-value problem class. This approach delivers a platform that is modern, scalable, data-sovereign, and poised to compete with top-tier proprietary logistics software.
+7.1. Summary of Key Repository Recommendations
+Functional Domain
+	Recommended Repository
+	Primary Role in Architecture
+	Operational Core
+	fleetbase/fleetbase
+	System of Record, API, User Management.
+	OCR Engine
+	datalab-to/surya
+	Text detection and recognition (SegFormer).
+	Table Recognition
+	microsoft/table-transformer
+	Extracting line items from invoices.
+	Verification UI
+	DanielArnould/react-pdf-highlighter-extended
+	Human-in-the-Loop review interface.
+	EDI Parsing
+	nerdocs/pydifact
+	Parsing UN/EDIFACT messages.
+	Validation
+	arthurdejong/python-stdnum
+	Validating container IDs and tax codes.
+	Orchestration
+	tsangel/nextjs-fastapi-starter
+	Glue code for Frontend/Backend communication.
+	Works cited
+   1. fleetbase/fleetbase: Modular logistics and supply chain ... - GitHub, accessed December 23, 2025, https://github.com/fleetbase/fleetbase
+   2. Fleetbase | Open-Source Logistics Platform for Modern Supply Chain Operations, accessed December 23, 2025, https://fleetbase.io/
+   3. Fleetbase CLI tool for managing extensions - GitHub, accessed December 23, 2025, https://github.com/fleetbase/fleetbase-cli
+   4. Extensions | Fleetbase, accessed December 23, 2025, https://docs.fleetbase.io/category/extensions/
+   5. Fleetbase: Introduction, accessed December 23, 2025, https://docs.fleetbase.io/
+   6. Fleetbase open source is now live!, accessed December 23, 2025, https://www.fleetbase.io/post/fleetbase-open-source-is-now-live
+   7. Introduction | Fleetbase, accessed December 23, 2025, https://docs.fleetbase.io/developers/introduction/
+   8. Transactions | Fleetbase, accessed December 23, 2025, https://docs.fleetbase.io/core-concepts/transactions/
+   9. Introduction | Fleetbase, accessed December 23, 2025, https://docs.fleetbase.io/developers/building-an-extension/
+   10. erp · GitHub Topics, accessed December 23, 2025, https://github.com/topics/erp
+   11. Ever® Gauzy™ - Open Business Management Platform (ERP/CRM/HRM/ATS/PM) - GitHub, accessed December 23, 2025, https://github.com/ever-co/ever-gauzy
+   12. frappe/erpnext: Free and Open Source Enterprise Resource Planning (ERP) - GitHub, accessed December 23, 2025, https://github.com/frappe/erpnext
+   13. CibinQuadance/surya-OCR: OCR and line detection in 90+ languages - GitHub, accessed December 23, 2025, https://github.com/CibinQuadance/surya-OCR
+   14. datalab-to/surya: OCR, layout analysis, reading order, table recognition in 90+ languages - GitHub, accessed December 23, 2025, https://github.com/datalab-to/surya
+   15. VikParuchuri/tabled: Detect and extract tables to markdown and csv - GitHub, accessed December 23, 2025, https://github.com/VikParuchuri/tabled
+   16. Line-level text detection with Surya - OpenVINO™ documentation, accessed December 23, 2025, https://docs.openvino.ai/2024/notebooks/surya-line-level-text-detection-with-output.html
+   17. cognitiveailab/surya-sci: OCR, layout analysis, reading order, line detection in 90+ languages - GitHub, accessed December 23, 2025, https://github.com/cognitiveailab/surya-sci
+   18. Examples – cudanexus/ocr-surya | Replicate, accessed December 23, 2025, https://replicate.com/cudanexus/ocr-surya/examples
+   19. Table Transformer (TATR) is a deep learning model for extracting tables from unstructured documents (PDFs and images). This is also the official repository for the PubTables-1M dataset and GriTS evaluation metric. - GitHub, accessed December 23, 2025, https://github.com/microsoft/table-transformer
+   20. table-transformer/README.md at main - GitHub, accessed December 23, 2025, https://github.com/microsoft/table-transformer/blob/main/README.md?plain=1
+   21. poloclub/unitable: UniTable: Towards a Unified Table Foundation Model - GitHub, accessed December 23, 2025, https://github.com/poloclub/unitable
+   22. naiveHobo/InvoiceNet: Deep neural network to extract intelligent information from invoice documents. - GitHub, accessed December 23, 2025, https://github.com/naiveHobo/InvoiceNet
+   23. InvoiceableAI/Invoiceable: The invoice, document, and resume parser powered by AI. - GitHub, accessed December 23, 2025, https://github.com/InvoiceableAI/Invoiceable
+   24. Yashsonaar/LayoutLMv3-Fine-Tuning: Welcome to the LayoutLMv3 Fine-Tuning project! This project focuses on extracting structured data from invoices and PDFs using LayoutLMv3, PaddleOCR, and Label Studio. The system extracts key fields like invoice number, date, vendor GSTIN, PAN, product description, rate, quantity, and amount. - GitHub, accessed December 23, 2025, https://github.com/Yashsonaar/LayoutLMv3-Fine-Tuning
+   25. SuryaOCR with custom OCR models - Docling - GitHub Pages, accessed December 23, 2025, https://docling-project.github.io/docling/examples/suryaocr_with_custom_models/
+   26. agentcooper/react-pdf-highlighter: Set of React components for PDF annotation - GitHub, accessed December 23, 2025, https://github.com/agentcooper/react-pdf-highlighter
+   27. DanielArnould/react-pdf-highlighter-extended - GitHub, accessed December 23, 2025, https://github.com/DanielArnould/react-pdf-highlighter-extended
+   28. @vunamhung/react-pdf-highlighter - NPM, accessed December 23, 2025, https://www.npmjs.com/package/%40vunamhung%2Freact-pdf-highlighter
+   29. mohanmarx/react-custom-pdf-highlighter - GitHub, accessed December 23, 2025, https://github.com/mohanmarx/react-custom-pdf-highlighter
+   30. Building a Dynamic PDF Highlighter in React: A Scalable, Layout-Agnostic Approach, accessed December 23, 2025, https://medium.com/@aalam-info-solutions-llp/building-a-dynamic-pdf-highlighter-in-react-a-scalable-layout-agnostic-approach-22ed400c9809
+   31. HumanSignal/label-studio-frontend: Data labeling react app that is backend agnostic and can be embedded into your applications — distributed as an NPM package - GitHub, accessed December 23, 2025, https://github.com/HumanSignal/label-studio-frontend
+   32. Frontend builds - Label Studio, accessed December 23, 2025, https://labelstud.io/guide/frontend.html
+   33. Options - React PDF Viewer, accessed December 23, 2025, https://react-pdf-viewer.dev/docs/options/
+   34. Pydifact documentation — pydifact documentation, accessed December 23, 2025, https://pydifact.readthedocs.io/
+   35. nerdocs/pydifact: A python EDIFACT library. - GitHub, accessed December 23, 2025, https://github.com/nerdocs/pydifact
+   36. aaronhuggins/node-x12: ASC X12 parser, generator, query engine, and mapper; now with support for streams. - GitHub, accessed December 23, 2025, https://github.com/aaronhuggins/node-x12
+   37. Bots-EDI. Full-Featured Open Source EDI Translator, accessed December 23, 2025, https://bots-edi.org/
+   38. Bots EDI Translator - GitHub, accessed December 23, 2025, https://github.com/bots-edi/bots
+   39. NaN-tic/python-edifact - GitHub, accessed December 23, 2025, https://github.com/NaN-tic/python-edifact
+   40. tastypackets/x12-parser: JavaScript EDI Parser that uses datastreams - GitHub, accessed December 23, 2025, https://github.com/tastypackets/x12-parser
+   41. stdnum.iso6346 — python-stdnum 1.17 documentation - Arthur de Jong, accessed December 23, 2025, https://arthurdejong.org/python-stdnum/doc/1.17/stdnum.iso6346
+   42. python-stdnum/stdnum/iso6346.py at master · arthurdejong/python-stdnum - GitHub, accessed December 23, 2025, https://github.com/arthurdejong/python-stdnum/blob/master/stdnum/iso6346.py
+   43. un-locode/datapackage.json at main - GitHub, accessed December 23, 2025, https://github.com/datasets/un-locode/blob/main/datapackage.json
+   44. United Nations Codes for Trade and Transport Locations (UN/LOCODE) and Country Codes - GitHub, accessed December 23, 2025, https://github.com/datasets/un-locode
+   45. tsangel/nextjs-fastapi-starter - GitHub, accessed December 23, 2025, https://github.com/tsangel/nextjs-fastapi-starter
+   46. ACE AI - Multi Agent RAG, one stop exam preparation applicaiton for students powered by langchain, vercel ai sdk, openai, fastapi, pinecone and nextjs - GitHub, accessed December 23, 2025, https://github.com/Abdulbasit110/nextjs-fastapi/
